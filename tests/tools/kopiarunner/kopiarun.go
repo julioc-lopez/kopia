@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	repoPassword = "qWQPJ2hiiLgWRRCr"
+	defaultRepoPassword = "qWQPJ2hiiLgWRRCr"
 )
 
 // Runner is a helper for running kopia commands.

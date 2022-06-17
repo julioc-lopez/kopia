@@ -224,7 +224,7 @@ func (ks *KopiaSnapshotter) AuthorizeClient(user, host string, args ...string) e
 	args = append([]string{
 		"server", "user", "add",
 		user + "@" + host,
-		"--user-password", repoPassword,
+		"--user-password", defaultRepoPassword,
 	}, args...)
 	_, _, err := ks.Runner.Run(args...)
 
