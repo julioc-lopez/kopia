@@ -21,45 +21,79 @@ type Runner struct {
 	ConfigDir   string
 	fixedArgs   []string
 	environment []string
+	tempDir     string
 }
 
-// ErrExeVariableNotSet is an exported error.
+// ErrExeVariableNotSet is returned when the environment variable for the kopia
+// executable is not set.
 var ErrExeVariableNotSet = errors.New("KOPIA_EXE variable has not been set")
 
-// NewRunner initializes a new kopia runner and returns its pointer.
+// RunnerOpts contains the options for creating a new runner.
+type RunnerOpts struct {
+	BaseDir      string
+	Executable   string
+	ConfigDir    string
+	RepoPassword string
+}
+
+// NewRunner returns a newly initialized kopia runner.
 func NewRunner(baseDir string) (*Runner, error) {
-	exe := os.Getenv("KOPIA_EXE")
-	if exe == "" {
-		return nil, ErrExeVariableNotSet
+	return NewRunnerWithOptions(RunnerOpts{BaseDir: baseDir})
+}
+
+func NewRunnerWithOptions(opts RunnerOpts) (*Runner, error) {
+	if opts.Executable == "" {
+		exe := os.Getenv("KOPIA_EXE")
+		if exe == "" {
+			return nil, ErrExeVariableNotSet
+		}
+
+		opts.Executable = exe
 	}
 
-	configDir, err := os.MkdirTemp(baseDir, "kopia-config")
-	if err != nil {
-		return nil, err
+	var tempDir string
+
+	if opts.ConfigDir == "" {
+		configDir, err := os.MkdirTemp(opts.BaseDir, "kopia-config")
+		if err != nil {
+			return nil, err
+		}
+
+		tempDir = configDir
+		opts.ConfigDir = configDir
 	}
 
-	fixedArgs := []string{
-		// use per-test config file, to avoid clobbering current user's setup.
-		"--config-file", filepath.Join(configDir, ".kopia.config"),
+	if opts.RepoPassword == "" {
+		opts.RepoPassword = defaultRepoPassword
 	}
 
 	return &Runner{
-		Exe:         exe,
-		ConfigDir:   configDir,
-		fixedArgs:   fixedArgs,
-		environment: []string{"KOPIA_PASSWORD=" + repoPassword},
+		Exe:       opts.Executable,
+		ConfigDir: opts.ConfigDir,
+		fixedArgs: []string{
+			// use per-test config file, to avoid clobbering current user's setup.
+			"--config-file", filepath.Join(opts.ConfigDir, "repository.config"),
+		},
+		environment: []string{"KOPIA_PASSWORD=" + opts.RepoPassword},
+		tempDir:     tempDir,
 	}, nil
 }
 
 // Cleanup cleans up the directories managed by the kopia Runner.
 func (kr *Runner) Cleanup() {
-	if kr.ConfigDir != "" {
-		os.RemoveAll(kr.ConfigDir) //nolint:errcheck
+	if kr.tempDir != "" {
+		os.RemoveAll(kr.tempDir) //nolint:errcheck
 	}
 }
 
 // Run will execute the kopia command with the given args.
 func (kr *Runner) Run(args ...string) (stdout, stderr string, err error) {
+	outB, errB, err2 := kr.RunBytes(args...)
+
+	return string(outB), string(errB), err2
+}
+
+func (kr *Runner) RunBytes(args ...string) (stdout, stderr []byte, err error) {
 	argsStr := strings.Join(args, " ")
 	log.Printf("running '%s %v'", kr.Exe, argsStr)
 	cmdArgs := append(append([]string(nil), kr.fixedArgs...), args...)
@@ -70,9 +104,9 @@ func (kr *Runner) Run(args ...string) (stdout, stderr string, err error) {
 	c.Stderr = errOut
 
 	o, err := c.Output()
-	log.Printf("finished '%s %v' with err=%v and output:\nSTDOUT:\n%v\nSTDERR:\n%v", kr.Exe, argsStr, err, string(o), errOut.String())
+	log.Printf("finished '%s %v' with err=%v and output:\nSTDOUT:\n%s\nSTDERR:\n%s", kr.Exe, argsStr, err, o, errOut)
 
-	return string(o), errOut.String(), err
+	return o, errOut.Bytes(), err
 }
 
 // RunAsync will execute the kopia command with the given args in background.
