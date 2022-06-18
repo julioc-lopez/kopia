@@ -88,7 +88,7 @@ type SnapshotMetadata struct {
 	SnapStartTime  time.Time `json:"snapStartTime"`
 	SnapEndTime    time.Time `json:"snapEndTime"`
 	DeletionTime   time.Time `json:"deletionTime"`
-	ValidationData []byte    `json:"validationData"`
+	ValidationData []byte    `json:"validationData,omitempty"`
 }
 
 // IsDeleted returns true if the SnapshotMetadata references a snapshot ID that
