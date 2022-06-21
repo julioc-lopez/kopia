@@ -8,7 +8,6 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"log"
 	"sync/atomic"
 
 	"github.com/pkg/errors"
@@ -18,11 +17,14 @@ import (
 	"github.com/kopia/kopia/internal/units"
 	"github.com/kopia/kopia/repo"
 	"github.com/kopia/kopia/repo/blob"
+	"github.com/kopia/kopia/repo/logging"
 	"github.com/kopia/kopia/snapshot"
 	"github.com/kopia/kopia/snapshot/policy"
 	"github.com/kopia/kopia/snapshot/snapshotfs"
 	"github.com/kopia/kopia/tests/robustness"
 )
+
+var log = logging.Module("tools/kopiaclient")
 
 // KopiaClient uses a Kopia repo to create, restore, and delete snapshots.
 type KopiaClient struct {
@@ -49,7 +51,7 @@ func (kc *KopiaClient) ConnectOrCreate(ctx context.Context, repoDir string, st b
 			return errors.Wrap(err, "repo is already initialized")
 		}
 
-		log.Println("connecting to existing repository")
+		log(ctx).Debugf("connecting to existing repository")
 	}
 
 	if err := repo.Connect(ctx, kc.configFile, st, kc.password, &repo.ConnectOptions{}); err != nil {
@@ -86,7 +88,7 @@ func (kc *KopiaClient) SnapshotCreate(ctx context.Context, key string, val []byt
 		return errors.Wrap(err, "cannot get manifest")
 	}
 
-	log.Printf("snapshotting %v", units.BytesStringBase10(atomic.LoadInt64(&man.Stats.TotalFileSize)))
+	log(ctx).Infof("snapshotting %v", units.BytesStringBase10(atomic.LoadInt64(&man.Stats.TotalFileSize)))
 
 	if _, err := snapshot.SaveSnapshot(ctx, rw, man); err != nil {
 		return errors.Wrap(err, "cannot save snapshot")
@@ -129,7 +131,7 @@ func (kc *KopiaClient) SnapshotRestore(ctx context.Context, key string) ([]byte,
 		return nil, err
 	}
 
-	log.Printf("restored %v", units.BytesStringBase10(int64(len(val))))
+	log(ctx).Infof("restored %v", units.BytesStringBase10(int64(len(val))))
 
 	if err := r.Close(ctx); err != nil {
 		return nil, err
