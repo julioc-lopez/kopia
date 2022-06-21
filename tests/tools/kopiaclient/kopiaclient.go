@@ -27,7 +27,7 @@ import (
 // KopiaClient uses a Kopia repo to create, restore, and delete snapshots.
 type KopiaClient struct {
 	configPath string
-	pw         string
+	password   string
 }
 
 const (
@@ -38,13 +38,13 @@ const (
 func NewKopiaClient(configFile, password string) *KopiaClient {
 	return &KopiaClient{
 		configPath: configFile,
-		pw:         password,
+		password:   password,
 	}
 }
 
 // ConnectOrCreate creates a new Kopia repo or connects to an existing one if possible.
 func (kc *KopiaClient) ConnectOrCreate(ctx context.Context, repoDir string, st blob.Storage) error {
-	if err := repo.Initialize(ctx, st, &repo.NewRepositoryOptions{}, kc.pw); err != nil {
+	if err := repo.Initialize(ctx, st, &repo.NewRepositoryOptions{}, kc.password); err != nil {
 		if !errors.Is(err, repo.ErrAlreadyInitialized) {
 			return errors.Wrap(err, "repo is already initialized")
 		}
@@ -52,7 +52,7 @@ func (kc *KopiaClient) ConnectOrCreate(ctx context.Context, repoDir string, st b
 		log.Println("connecting to existing repository")
 	}
 
-	if err := repo.Connect(ctx, kc.configPath, st, kc.pw, &repo.ConnectOptions{}); err != nil {
+	if err := repo.Connect(ctx, kc.configPath, st, kc.password, &repo.ConnectOptions{}); err != nil {
 		return errors.Wrap(err, "error connecting to repository")
 	}
 
@@ -61,7 +61,7 @@ func (kc *KopiaClient) ConnectOrCreate(ctx context.Context, repoDir string, st b
 
 // SnapshotCreate creates a snapshot for the given path.
 func (kc *KopiaClient) SnapshotCreate(ctx context.Context, key string, val []byte) error {
-	r, err := repo.Open(ctx, kc.configPath, kc.pw, &repo.Options{})
+	r, err := repo.Open(ctx, kc.configPath, kc.password, &repo.Options{})
 	if err != nil {
 		return errors.Wrap(err, "cannot open repository")
 	}
@@ -101,7 +101,7 @@ func (kc *KopiaClient) SnapshotCreate(ctx context.Context, key string, val []byt
 
 // SnapshotRestore restores the latest snapshot for the given path.
 func (kc *KopiaClient) SnapshotRestore(ctx context.Context, key string) ([]byte, error) {
-	r, err := repo.Open(ctx, kc.configPath, kc.pw, &repo.Options{})
+	r, err := repo.Open(ctx, kc.configPath, kc.password, &repo.Options{})
 	if err != nil {
 		return nil, errors.Wrap(err, "cannot open repository")
 	}
@@ -140,7 +140,7 @@ func (kc *KopiaClient) SnapshotRestore(ctx context.Context, key string) ([]byte,
 
 // SnapshotDelete deletes all snapshots for a given path.
 func (kc *KopiaClient) SnapshotDelete(ctx context.Context, key string) error {
-	r, err := repo.Open(ctx, kc.configPath, kc.pw, &repo.Options{})
+	r, err := repo.Open(ctx, kc.configPath, kc.password, &repo.Options{})
 	if err != nil {
 		return errors.Wrap(err, "cannot open repository")
 	}
