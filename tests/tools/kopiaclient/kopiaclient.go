@@ -68,10 +68,14 @@ func (kc *KopiaClient) SnapshotCreate(ctx context.Context, key string, val []byt
 		return errors.Wrap(err, "cannot open repository")
 	}
 
+	defer close(ctx, r)
+
 	ctx, rw, err := r.NewWriter(ctx, repo.WriteSessionOptions{})
 	if err != nil {
 		return errors.Wrap(err, "cannot get new repository writer")
 	}
+
+	defer close(ctx, rw)
 
 	si := kc.getSourceInfoFromKey(r, key)
 
@@ -94,11 +98,7 @@ func (kc *KopiaClient) SnapshotCreate(ctx context.Context, key string, val []byt
 		return errors.Wrap(err, "cannot save snapshot")
 	}
 
-	if err := rw.Flush(ctx); err != nil {
-		return err
-	}
-
-	return r.Close(ctx)
+	return errors.Wrap(rw.Flush(ctx), "cannot flush repo writer during snapshot create")
 }
 
 // SnapshotRestore restores the latest snapshot for the given path.
@@ -107,6 +107,8 @@ func (kc *KopiaClient) SnapshotRestore(ctx context.Context, key string) ([]byte,
 	if err != nil {
 		return nil, errors.Wrap(err, "cannot open repository")
 	}
+
+	defer close(ctx, r)
 
 	mans, err := kc.getSnapshotsFromKey(ctx, r, key)
 	if err != nil {
@@ -126,16 +128,14 @@ func (kc *KopiaClient) SnapshotRestore(ctx context.Context, key string) ([]byte,
 		return nil, errors.Wrapf(err, "cannot open object %s", oid)
 	}
 
+	defer close(ctx, wrapCloser(or))
+
 	val, err := io.ReadAll(or)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "reading object during snapshot restore")
 	}
 
 	log(ctx).Infof("restored %v", units.BytesStringBase10(int64(len(val))))
-
-	if err := r.Close(ctx); err != nil {
-		return nil, err
-	}
 
 	return val, nil
 }
@@ -147,10 +147,14 @@ func (kc *KopiaClient) SnapshotDelete(ctx context.Context, key string) error {
 		return errors.Wrap(err, "cannot open repository")
 	}
 
+	defer close(ctx, r)
+
 	ctx, rw, err := r.NewWriter(ctx, repo.WriteSessionOptions{})
 	if err != nil {
 		return errors.Wrap(err, "cannot get new repository writer")
 	}
+
+	defer close(ctx, rw)
 
 	mans, err := kc.getSnapshotsFromKey(ctx, r, key)
 	if err != nil {
@@ -163,11 +167,7 @@ func (kc *KopiaClient) SnapshotDelete(ctx context.Context, key string) error {
 		}
 	}
 
-	if err := rw.Flush(ctx); err != nil {
-		return err
-	}
-
-	return r.Close(ctx)
+	return errors.Wrap(rw.Flush(ctx), "flushing writer during snapshot delete")
 }
 
 // getSourceForKeyVal creates a virtual directory for `key` that contains a single virtual file that
@@ -211,4 +211,26 @@ func (kc *KopiaClient) latestManifest(mans []*snapshot.Manifest) *snapshot.Manif
 	}
 
 	return latest
+}
+
+type closerWithContext interface {
+	Close(context.Context) error
+}
+
+type closerFunc func(context.Context) error
+
+func (f closerFunc) Close(ctx context.Context) error {
+	return f(ctx)
+}
+
+func wrapCloser(c io.Closer) closerFunc {
+	return func(context.Context) error {
+		return c.Close()
+	}
+}
+
+func close(ctx context.Context, c closerWithContext) {
+	if err := c.Close(ctx); err != nil {
+		log(ctx).Infof("close error", err)
+	}
 }
