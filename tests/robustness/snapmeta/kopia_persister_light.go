@@ -111,5 +111,5 @@ func (kpl *KopiaPersisterLight) doneWith(key string) {
 	kpl.c.L.Lock()
 	delete(kpl.keysInProcess, key)
 	kpl.c.L.Unlock()
-	kpl.c.Signal()
+	kpl.c.Broadcast()
 }
