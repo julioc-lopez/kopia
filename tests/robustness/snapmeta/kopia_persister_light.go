@@ -46,7 +46,7 @@ func NewPersisterLight(baseDir string) (*KopiaPersisterLight, error) {
 	configFile := filepath.Join(persistenceDir, "repository.config")
 
 	return &KopiaPersisterLight{
-		kc:            kopiaclient.NewKopiaClient(configFile, repoPassword),
+		kc:            kopiaclient.New(configFile, repoPassword),
 		keysInProcess: map[string]bool{},
 		c:             sync.NewCond(&sync.Mutex{}),
 		baseDir:       persistenceDir,

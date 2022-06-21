@@ -34,8 +34,8 @@ const (
 	dataFileName = "data"
 )
 
-// NewKopiaClient returns a new KopiaClient.
-func NewKopiaClient(configFile, password string) *KopiaClient {
+// New returns a new KopiaClient.
+func New(configFile, password string) *KopiaClient {
 	return &KopiaClient{
 		configFile: configFile,
 		password:   password,
