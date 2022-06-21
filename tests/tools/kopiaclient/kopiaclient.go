@@ -9,8 +9,6 @@ import (
 	"context"
 	"io"
 	"log"
-	"os"
-	"path/filepath"
 	"sync/atomic"
 
 	"github.com/pkg/errors"
@@ -20,8 +18,6 @@ import (
 	"github.com/kopia/kopia/internal/units"
 	"github.com/kopia/kopia/repo"
 	"github.com/kopia/kopia/repo/blob"
-	"github.com/kopia/kopia/repo/blob/filesystem"
-	"github.com/kopia/kopia/repo/blob/s3"
 	"github.com/kopia/kopia/snapshot"
 	"github.com/kopia/kopia/snapshot/policy"
 	"github.com/kopia/kopia/snapshot/snapshotfs"
@@ -35,42 +31,32 @@ type KopiaClient struct {
 }
 
 const (
-	configFileName           = "config"
-	password                 = "kj13498po&_EXAMPLE" //nolint:gosec
-	s3Endpoint               = "s3.amazonaws.com"
-	awsAccessKeyIDEnvKey     = "AWS_ACCESS_KEY_ID"
-	awsSecretAccessKeyEnvKey = "AWS_SECRET_ACCESS_KEY" //nolint:gosec
-	dataFileName             = "data"
+	dataFileName = "data"
 )
 
 // NewKopiaClient returns a new KopiaClient.
-func NewKopiaClient(basePath string) *KopiaClient {
+func NewKopiaClient(configFile, password string) *KopiaClient {
 	return &KopiaClient{
-		configPath: filepath.Join(basePath, configFileName),
+		configPath: configFile,
 		pw:         password,
 	}
 }
 
-// CreateOrConnectRepo creates a new Kopia repo or connects to an existing one if possible.
-func (kc *KopiaClient) CreateOrConnectRepo(ctx context.Context, repoDir, bucketName string) error {
-	st, err := kc.getStorage(ctx, repoDir, bucketName)
-	if err != nil {
-		return err
-	}
-
-	if iErr := repo.Initialize(ctx, st, &repo.NewRepositoryOptions{}, kc.pw); iErr != nil {
-		if !errors.Is(iErr, repo.ErrAlreadyInitialized) {
-			return errors.Wrap(iErr, "repo is already initialized")
+// ConnectOrCreate creates a new Kopia repo or connects to an existing one if possible.
+func (kc *KopiaClient) ConnectOrCreate(ctx context.Context, repoDir string, st blob.Storage) error {
+	if err := repo.Initialize(ctx, st, &repo.NewRepositoryOptions{}, kc.pw); err != nil {
+		if !errors.Is(err, repo.ErrAlreadyInitialized) {
+			return errors.Wrap(err, "repo is already initialized")
 		}
 
 		log.Println("connecting to existing repository")
 	}
 
-	if iErr := repo.Connect(ctx, kc.configPath, st, kc.pw, &repo.ConnectOptions{}); iErr != nil {
-		return errors.Wrap(iErr, "error connecting to repository")
+	if err := repo.Connect(ctx, kc.configPath, st, kc.pw, &repo.ConnectOptions{}); err != nil {
+		return errors.Wrap(err, "error connecting to repository")
 	}
 
-	return errors.Wrap(err, "unable to open repository")
+	return nil
 }
 
 // SnapshotCreate creates a snapshot for the given path.
@@ -180,30 +166,6 @@ func (kc *KopiaClient) SnapshotDelete(ctx context.Context, key string) error {
 	}
 
 	return r.Close(ctx)
-}
-
-func (kc *KopiaClient) getStorage(ctx context.Context, repoDir, bucketName string) (st blob.Storage, err error) {
-	if bucketName != "" {
-		s3Opts := &s3.Options{
-			BucketName:      bucketName,
-			Prefix:          repoDir,
-			Endpoint:        s3Endpoint,
-			AccessKeyID:     os.Getenv(awsAccessKeyIDEnvKey),
-			SecretAccessKey: os.Getenv(awsSecretAccessKeyEnvKey),
-		}
-		st, err = s3.New(ctx, s3Opts)
-	} else {
-		if iErr := os.MkdirAll(repoDir, 0o700); iErr != nil {
-			return nil, errors.Wrap(iErr, "cannot create directory")
-		}
-
-		fsOpts := &filesystem.Options{
-			Path: repoDir,
-		}
-		st, err = filesystem.New(ctx, fsOpts, false)
-	}
-
-	return st, errors.Wrap(err, "unable to get storage")
 }
 
 // getSourceForKeyVal creates a virtual directory for `key` that contains a single virtual file that

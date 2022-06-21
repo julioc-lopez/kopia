@@ -7,10 +7,22 @@ import (
 	"context"
 	"log"
 	"os"
+	"path/filepath"
 	"sync"
 
+	"github.com/kopia/kopia/repo/blob"
+	"github.com/kopia/kopia/repo/blob/filesystem"
+	"github.com/kopia/kopia/repo/blob/s3"
 	"github.com/kopia/kopia/tests/robustness"
 	"github.com/kopia/kopia/tests/tools/kopiaclient"
+	"github.com/pkg/errors"
+)
+
+const (
+	awsAccessKeyIDEnvKey     = "AWS_ACCESS_KEY_ID"
+	awsSecretAccessKeyEnvKey = "AWS_SECRET_ACCESS_KEY" //nolint:gosec
+	s3Endpoint               = "s3.amazonaws.com"
+	repoPassword             = "kj13498po&_EXAMPLE" //nolint:gosec
 )
 
 // KopiaPersisterLight is a wrapper for KopiaClient that satisfies the Persister
@@ -31,8 +43,10 @@ func NewPersisterLight(baseDir string) (*KopiaPersisterLight, error) {
 		return nil, err
 	}
 
+	configFile := filepath.Join(persistenceDir, "repository.config")
+
 	return &KopiaPersisterLight{
-		kc:            kopiaclient.NewKopiaClient(persistenceDir),
+		kc:            kopiaclient.NewKopiaClient(configFile, repoPassword),
 		keysInProcess: map[string]bool{},
 		c:             sync.NewCond(&sync.Mutex{}),
 		baseDir:       persistenceDir,
@@ -41,8 +55,12 @@ func NewPersisterLight(baseDir string) (*KopiaPersisterLight, error) {
 
 // ConnectOrCreateRepo creates a new Kopia repo or connects to an existing one if possible.
 func (kpl *KopiaPersisterLight) ConnectOrCreateRepo(repoPath string) error {
-	bucketName := os.Getenv(S3BucketNameEnvKey)
-	return kpl.kc.CreateOrConnectRepo(context.Background(), repoPath, bucketName)
+	st, err := getStorageFromEnvironment(context.Background(), repoPath)
+	if err != nil {
+		return err
+	}
+
+	return kpl.kc.ConnectOrCreate(context.Background(), repoPath, st)
 }
 
 // Store pushes the key value pair to the Kopia repository.
@@ -112,4 +130,41 @@ func (kpl *KopiaPersisterLight) doneWith(key string) {
 	delete(kpl.keysInProcess, key)
 	kpl.c.L.Unlock()
 	kpl.c.Broadcast()
+}
+
+// Behavior: if bucket name is set, assume the storage is an S3-compatible
+// backend, then create it and return it.
+// Otherwise, assume it is a filesystem backend
+func getStorageFromEnvironment(ctx context.Context, prefixPath string) (blob.Storage, error) {
+	bucketName := os.Getenv(S3BucketNameEnvKey)
+	if bucketName == "" {
+		if err := os.MkdirAll(prefixPath, 0o700); err != nil {
+			return nil, errors.Wrap(err, "cannot create directory")
+		}
+
+		fsOpts := &filesystem.Options{
+			Path: prefixPath,
+		}
+
+		st, err := filesystem.New(ctx, fsOpts, false)
+
+		return st, errors.Wrap(err, "cannot create FS storage")
+	}
+
+	// assume S3 otherwise
+	s3Opts := &s3.Options{
+		BucketName:      bucketName,
+		Prefix:          prefixPath,
+		Endpoint:        s3Endpoint,
+		AccessKeyID:     os.Getenv(awsAccessKeyIDEnvKey),
+		SecretAccessKey: os.Getenv(awsSecretAccessKeyEnvKey),
+	}
+
+	if s3Opts.AccessKeyID == "" || s3Opts.SecretAccessKey == "" {
+		return nil, errors.New("S3 credentials must be specified in the " + awsAccessKeyIDEnvKey + " and " + awsSecretAccessKeyEnvKey + " environment variables")
+	}
+
+	st, err := s3.New(ctx, s3Opts)
+
+	return st, errors.Wrap(err, "unable to create S3 storage")
 }
