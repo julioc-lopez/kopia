@@ -15,9 +15,16 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/kopia/kopia/cli"
+	"github.com/kopia/kopia/internal/testlogging"
+	"github.com/kopia/kopia/snapshot"
 	"github.com/kopia/kopia/tests/robustness/checker"
 	"github.com/kopia/kopia/tests/robustness/snapmeta"
+	"github.com/kopia/kopia/tests/tools/kopiaclient"
 	"github.com/kopia/kopia/tests/tools/kopiarunner"
+)
+
+const (
+	repoPassword = "kj13498po&_EXAMPLE" //nolint:gosec
 )
 
 func TestEnv(t *testing.T) {
@@ -149,7 +156,7 @@ func TestRepoConnect(t *testing.T) {
 
 }
 
-func TestSnapshotIterate(t *testing.T) {
+func TestSnapshotIterateKopiaRunner(t *testing.T) {
 	// TODO: iterate through all snapshots and list the top directory
 	// - get root entry from manifest
 	// -
@@ -161,7 +168,33 @@ func TestSnapshotIterate(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, kr)
+}
 
+func TestSnapshotIterateKopiaClient(t *testing.T) {
+	ctx := testlogging.Context(t)
+
+	// TODO: iterate through all snapshots and list the top directory
+	// - get root entry from manifest
+	// -
+	kc := kopiaclient.New("/user/.config/kopia/repository.config", "qWQPJ2hiiLgWRRCr")
+	require.NotNil(t, kc)
+
+	r, err := kc.OpenRepo(ctx, nil)
+
+	require.NoError(t, err)
+	require.NotNil(t, r)
+
+	defer r.Close(ctx)
+
+	entries, err := snapshot.ListSnapshotManifests(ctx, r, nil, nil)
+	require.NoError(t, err)
+	require.NotNil(t, entries)
+
+	mans, err := snapshot.LoadSnapshots(ctx, r, entries)
+	require.NoError(t, err)
+	require.NotNil(t, mans)
+
+	t.Log("mans length:", len(mans))
 }
 
 func TestUnifyMetaPath(t *testing.T) {
