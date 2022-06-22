@@ -61,6 +61,12 @@ func (kc *KopiaClient) ConnectOrCreate(ctx context.Context, repoDir string, st b
 	return nil
 }
 
+func (kc *KopiaClient) OpenRepo(ctx context.Context, opts *repo.Options) (repo.Repository, error) {
+	r, err := repo.Open(ctx, kc.configFile, kc.password, opts)
+
+	return r, errors.Wrap(err, "cannot open repository")
+}
+
 // SnapshotCreate creates a snapshot for the given path.
 func (kc *KopiaClient) SnapshotCreate(ctx context.Context, key string, val []byte) error {
 	r, err := repo.Open(ctx, kc.configFile, kc.password, &repo.Options{})
