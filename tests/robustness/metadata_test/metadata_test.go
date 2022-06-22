@@ -154,6 +154,15 @@ func TestRepoConnect(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, kr)
 
+	// Enable compression in the repository, this may be already enabled.
+	// kr.Run("policy", "set", "--global", "--compression=zstd-best-compression", "--compression-min-size=512")
+	kr.Run("maintenance", "info")
+	kr.Run("maintenance", "--enable-quick=false")
+	kr.Run("maintenance", "--enable-full=true")
+
+	// kr.Run("repository", "set-parameters", "--upgrade")
+
+	kr.Run("repository", "set-client", "--hostname", "robustness", "--username", "root")
 }
 
 func TestSnapshotIterateKopiaRunner(t *testing.T) {
